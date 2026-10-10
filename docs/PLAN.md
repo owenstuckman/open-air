@@ -1,6 +1,6 @@
 # OpenAir: Plan & Wireframes
 
-_Phone-first Fitbit Air dashboard. **v2, 2026-10-09.** Evidence: [RESEARCH.md](RESEARCH.md) (Google Health API) and [BLE_RESEARCH.md](BLE_RESEARCH.md) (direct Bluetooth)._
+_Phone-first Fitbit Air dashboard. **v3, 2026-10-10.** Evidence: [RESEARCH.md](RESEARCH.md) (Google Health API) and [BLE_RESEARCH.md](BLE_RESEARCH.md) (direct Bluetooth)._
 
 ## Decisions so far
 
@@ -10,15 +10,16 @@ _Phone-first Fitbit Air dashboard. **v2, 2026-10-09.** Evidence: [RESEARCH.md](R
 | Data storage | **Cloud Postgres is fine** |
 | Name | **OpenAir** |
 | Data sources | **Hybrid**: live HR + RR **straight from the band over Bluetooth**, history from the **Google Health API** |
-| App type | **Native iOS app** (iOS web apps can't use Bluetooth) built with **Expo / React Native** |
+| App type | **Native iOS app in Swift / SwiftUI** (iOS web apps can't use Bluetooth) |
+| Dev setup | **Mac + Xcode**, **Apple Developer Program** ($99/yr) → TestFlight |
 | Top alerts | _Still open, see [Open questions](#open-questions)_ |
 
-### Why Expo instead of a web app or SwiftUI
-- **iPhone Safari has no Web Bluetooth**, so a PWA can't talk to the band. Talking to the band needs a native app.
-- **No Mac needed.** Expo's EAS Build compiles the iOS app in the cloud and installs it via TestFlight. (Assumption: you develop on Windows. If you have a Mac, SwiftUI is also an option.)
-- `react-native-ble-plx` supports **iOS background Bluetooth** (`bluetooth-central` mode + state restoration), so it keeps receiving HR while the phone is locked.
-- One TypeScript codebase across the app and the backend.
-- **Cost:** the Apple Developer Program costs **$99/yr**. It's needed for TestFlight / long-lived installs; free provisioning expires every 7 days and requires a Mac.
+### Why native Swift (SwiftUI)
+- **iPhone Safari has no Web Bluetooth**, so a web app can't talk to the band. Talking to the band needs a native app.
+- **Background Bluetooth is the riskiest part** of this project. **CoreBluetooth** used directly (`bluetooth-central` background mode, state preservation and restoration, `retrieveConnectedPeripherals`) gives the most control and is the easiest to debug. A cross-platform wrapper would add a layer between us and the parts most likely to go wrong.
+- **Apple-only extras come for free:** Swift Charts, **Live Activities** (live HR on the Lock Screen and Dynamic Island), WidgetKit widgets, CoreMotion stillness detection, and HealthKit if wanted later.
+- You have a Mac and the developer program, so the only reason to use Expo (cloud builds without a Mac) no longer applies. We're iPhone-only, so we don't need cross-platform either.
+- Trade-off: the app (Swift) and the backend (TypeScript) are in two different languages. The backend is small, so that's fine.
 
 ## Goal
 
@@ -33,13 +34,13 @@ Keep syncing the Fitbit Air through the Google Health app as usual. OpenAir does
                        ┌──────────── iPhone ─────────────────────────────┐
  Fitbit Air ──BLE──────┼─▶ Google Health app (unchanged, syncs history)  │
      │                 │                                                 │
-     │ "Share heart    │   OpenAir app (Expo / React Native)             │
+     │ "Share heart    │   OpenAir app (SwiftUI + CoreBluetooth)           │
      │  rate" 0x180D   │   ├─ BLE live source: HR + RR (background)      │
      └─────────────────┼─▶ ├─ on-device: live HRV, stress moments        │
                        │   ├─ local cache (SQLite) → batched upload      │
                        │   └─ dashboards · push notifications            │
                        └─────────┬──────────────────────▲────────────────┘
-                                 │ upload live samples   │ APNs push (via Expo)
+                                 │ upload live samples   │ APNs push
                                  ▼                       │
    Google Health cloud ──webhook──▶ OpenAir backend (Next.js API on Vercel)
           ▲                         ├─ /api/auth/google   OAuth (secret server-side)
@@ -47,19 +48,19 @@ Keep syncing the Fitbit Air through the Google Health app as usual. OpenAir does
                                     ├─ /api/cron/sync     fallback poll · nightly baselines
                                     ├─ /api/ingest/live   receives BLE samples from phone
                                     ├─ derive: baselines · stress · recovery
-                                    └─ alerts: rules → Expo push → APNs
+                                    └─ alerts: rules → APNs (direct)
                                                │
                                      Postgres (Neon via Vercel Marketplace)
 ```
 
 | Layer | Choice | Why |
 |---|---|---|
-| iOS app | **Expo (React Native) + TypeScript**, expo-router, `react-native-ble-plx`, Victory Native / Skia charts, expo-sqlite | Native Bluetooth, cloud builds without a Mac |
-| Distribution | EAS Build → **TestFlight** | Installs like a normal app and auto-updates |
+| iOS app | **Swift + SwiftUI**, CoreBluetooth, Swift Charts, SwiftData (or GRDB/SQLite) for the local buffer, CoreMotion, ActivityKit / WidgetKit | Full control of background Bluetooth plus native extras |
+| Distribution | Xcode → App Store Connect → **TestFlight** | Installs like a normal app; builds last 90 days and get refreshed by new uploads |
 | Backend | **Next.js API routes on Vercel** + Cron | OAuth secret, webhook endpoint, scheduled jobs |
 | DB | **Postgres (Neon)** + Drizzle ORM | Single-user time series fits easily |
 | App login | Sign in with Google, allow-listing only your email; the same consent grants health scopes | One login |
-| Push | **Expo Notifications → APNs** | Reliable on iPhone (Web Push is no longer needed) |
+| Push | **APNs directly** (token-based `.p8` key, sent from the backend) + **local notifications** for on-device live alerts | Live alerts fire even without network |
 | Later | iOS **Live Activity** (live HR on the Lock Screen), home-screen **widgets**, Claude coach | Native extras |
 
 ### Data model (first cut)
@@ -76,7 +77,7 @@ stress_events     (user_id, start_at, end_at, peak_hr, min_rmssd, rhr_ref, tag)
 sync_runs         (id, trigger[webhook|cron|manual|backfill|ble_upload], data_types, status, errors jsonb, started_at, ended_at)
 alert_rules       (id, user_id, kind, params jsonb, enabled, quiet_hours)
 alert_events      (id, rule_id, fired_at, message, payload jsonb, acknowledged)
-push_tokens       (id, user_id, expo_push_token, device_label)
+push_tokens       (id, user_id, apns_device_token, device_label)
 ```
 
 Raw cloud payloads stay untouched in `data_points`. `record_id` + upserts make webhook retries idempotent. Live samples are buffered on the phone in SQLite and uploaded in batches, so a bad connection loses nothing.
@@ -126,11 +127,11 @@ Raw cloud payloads stay untouched in `data_points`. `record_id` + upserts make w
 |---|---|---|
 | **0a · BLE test** (you, ~1 h) | nRF Connect on iPhone: Share heart rate + Always visible, subscribe to `0x2A37`, check RR presence and variability, check Google Health still syncs, note 24 h battery use | We know whether real RR intervals exist |
 | **0b · API spike** (1–2 days) | GCP project, enable Google Health API, consent screen "In production" (unverified), Web OAuth client, probe script for every data type, test webhook | Real HRV, sleep, SpO₂ and RHR for your Air; webhook fires; refresh token outlives 7 days |
-| **1 · Foundations** | Backend: Next.js API, Postgres schema, Google sign-in, encrypted tokens, backfill, webhook, cron. App: Expo skeleton, Apple Developer account, EAS → TestFlight | The app is installed on your iPhone and shows 90 days of synced data |
+| **1 · Foundations** | Backend: Next.js API, Postgres schema, Google sign-in, encrypted tokens, backfill, webhook, cron. App: Xcode project (SwiftUI), Apple Developer account, Sign in with Google, TestFlight pipeline | The app is installed on your iPhone and shows 90 days of synced data |
 | **2 · Live Bluetooth** | BLE live source, background mode, state restoration, SQLite buffer, upload, Live screen | Live HR + HRV keep updating with the phone locked for 8+ h |
 | **3 · Dashboards** | Today, Sleep, Heart & HRV, Stress, Activity, Trends | Usable one-handed and fast to open |
 | **4 · Derived metrics** | Baselines, live HRV windows, stress moments, Stress Load, Recovery, illness watch | Scores explain themselves; a backtest on history looks sane |
-| **5 · Alerts** | Expo push / APNs, rules engine, quiet hours, morning brief, history | The morning brief and a live stress alert arrive on your phone |
+| **5 · Alerts** | APNs + local notifications, rules engine, quiet hours, morning brief, history | The morning brief and a live stress alert arrive on your phone |
 | **6 · Extras** | Lock-screen Live Activity with live HR, widgets, Claude coach chat, export, journaling tags for correlations | Pick as wanted |
 
 ---
@@ -308,8 +309,7 @@ Raw cloud payloads stay untouched in `data_points`. `record_id` + upserts make w
 ## Open questions
 
 1. **Top 2–3 alerts for v1?** My suggestion: stress moment, morning brief, illness watch.
-2. **Mac or Windows only?** The plan assumes Windows + Expo cloud builds. A Mac opens up SwiftUI as an option.
-3. **OK with the $99/yr Apple Developer Program?** It's required for TestFlight installs that don't expire.
+2. ~~Mac?~~ **Yes.** → SwiftUI. ~~Apple Developer Program?~~ **Yes.**
 
 ## What's missing / not yet verified
 
@@ -323,4 +323,4 @@ Raw cloud payloads stay untouched in `data_points`. `record_id` + upserts make w
 
 ## Next step
 
-**Phase 0a**, on your iPhone: install **nRF Connect**, turn on Share heart rate + Always visible for the Air, connect, subscribe to Heart Rate Measurement, and send me screenshots of the raw values. Steps are in [BLE_RESEARCH.md §4](BLE_RESEARCH.md#4-spike-verify-on-your-air-1-hour-no-code). In parallel, I can scaffold the backend and Expo app.
+**Phase 0a**, on your iPhone: install **nRF Connect**, turn on Share heart rate + Always visible for the Air, connect, subscribe to Heart Rate Measurement, and send me screenshots of the raw values. Steps are in [BLE_RESEARCH.md §4](BLE_RESEARCH.md#4-spike-verify-on-your-air-1-hour-no-code). In parallel, I can scaffold the backend (Next.js) and the Xcode project.

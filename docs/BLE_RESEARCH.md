@@ -77,7 +77,7 @@ Status from the Gadgetbridge tracker [#504](https://codeberg.org/Freeyourgadget/
 | **iPhone, native (Capacitor + CoreBluetooth)** | ✅ | 🟡 `bluetooth-central` background mode works while connected; iOS may suspend it | Needs Xcode and an Apple dev account for long-term installs |
 | **Bedside hub** (Raspberry Pi / old Android phone) | ✅ | ✅ while you're in range | Good for overnight HRV and stress; uses OpenFit-style local storage |
 
-**Decision (2026-10-09): you're on iPhone.** OpenAir becomes a **native iOS app built with Expo / React Native**, using `react-native-ble-plx` with the `bluetooth-central` background mode and state restoration. EAS Build compiles it in the cloud, so no Mac is needed, and it installs via TestFlight (Apple Developer Program, $99/yr). See [PLAN.md](PLAN.md).
+**Decision (2026-10-09): you're on iPhone.** OpenAir becomes a **native iOS app in Swift / SwiftUI** that uses **CoreBluetooth** directly, with the `bluetooth-central` background mode and state preservation and restoration. It's built in Xcode on your Mac and installed via TestFlight (Apple Developer Program, decided 2026-10-10). See [PLAN.md](PLAN.md).
 
 iOS specifics:
 - The Google Health app is already connected to the Air. iOS lets other apps use an already-connected peripheral (`retrieveConnectedPeripherals(withServices:)`), so OpenAir *may* be able to subscribe to `0x180D` without fighting Google Health. This is **unverified**; the test below checks it.
@@ -103,6 +103,14 @@ Instant alerts become possible, because there's no waiting on cloud sync. For ex
 
 ## 4. Spike: verify on your Air (≈1 hour, no code)
 
+> **What is nRF Connect?** A free Bluetooth inspection app from Nordic Semiconductor, a Bluetooth chip maker. It shows every Bluetooth device nearby and what each one exposes, and it can subscribe to a value and show the raw bytes as they arrive. Here it lets us see exactly what the Air sends **before we write any code**. The whole app design depends on one detail, whether real RR intervals are in the heart rate broadcast, and this test answers it in minutes. The Swift app later does the same thing nRF Connect does here: connect, subscribe to `0x2A37`, decode the bytes.
+>
+> **Reading the bytes:** nRF Connect shows each notification as hex, e.g. `0x16-48-41-03-2C-03`.
+> - **First byte = flags.** `16` (binary `0001 0110`) has bit 4 set, so **RR intervals are present**. `06` or `04` would mean they're absent.
+> - **Second byte = heart rate:** `0x48` = 72 bpm.
+> - **The rest = RR intervals, two bytes each, low byte first:** `41 03` → 0x0341 = 833/1024 s ≈ **813 ms**; `2C 03` → 812/1024 s ≈ **793 ms**.
+> - Screenshots of a few of these are all I need.
+
 1. In Google Health, turn on **Share heart rate** (and **Always visible**) for the Air.
 2. Install **nRF Connect** from the App Store. Scan, find the Air advertising `0x180D`, and connect. Accept the pairing prompt if it appears.
 3. Subscribe to **`0x2A37`** and watch the raw bytes:
@@ -118,7 +126,7 @@ Send me what you see (screenshots are fine). If RR is real, the hybrid plan is a
 ## 5. Impact on the plan
 
 - **Architecture becomes hybrid:** `BLE live source` (phone/hub, local) + `Google Health API` (history), merged into one store.
-- **Form factor:** native iOS app (Expo / React Native) distributed via TestFlight. No PWA is needed.
+- **Form factor:** native iOS app (SwiftUI + CoreBluetooth) distributed via TestFlight. No PWA is needed.
 - **New phase "0b · BLE spike"** runs alongside the API spike.
 - **The stress feature gets better:** real-time, from real beat-to-beat data, rather than inferred once a day.
 

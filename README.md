@@ -4,7 +4,7 @@ A phone-first dashboard for the Google Fitbit Air: HRV, stress, recovery, sleep,
 
 - **Live** heart rate + beat-to-beat (RR) intervals read straight from the band over Bluetooth → real-time HRV and stress
 - **History** (sleep, nightly HRV, SpO₂, skin temp, steps) pulled from the Google Health API
-- Native iOS app (Expo / React Native) + small backend (Next.js API on Vercel, Postgres)
+- Native iOS app (Swift / SwiftUI + CoreBluetooth) + small backend (Next.js API on Vercel, Postgres)
 
 Status: **planning**.
 
