@@ -77,7 +77,12 @@ Status from the Gadgetbridge tracker [#504](https://codeberg.org/Freeyourgadget/
 | **iPhone, native (Capacitor + CoreBluetooth)** | ✅ | 🟡 `bluetooth-central` background mode works while connected; iOS may suspend it | Needs Xcode and an Apple dev account for long-term installs |
 | **Bedside hub** (Raspberry Pi / old Android phone) | ✅ | ✅ while you're in range | Good for overnight HRV and stress; uses OpenFit-style local storage |
 
-So "bypass the cloud" pushes the app from **PWA → native app (Capacitor)**. That's the same React UI wrapped in a native shell, which was already Phase 5 in the plan and now moves earlier.
+**Decision (2026-10-09): you're on iPhone.** OpenAir becomes a **native iOS app built with Expo / React Native**, using `react-native-ble-plx` with the `bluetooth-central` background mode and state restoration. EAS Build compiles it in the cloud, so no Mac is needed, and it installs via TestFlight (Apple Developer Program, $99/yr). See [PLAN.md](PLAN.md).
+
+iOS specifics:
+- The Google Health app is already connected to the Air. iOS lets other apps use an already-connected peripheral (`retrieveConnectedPeripherals(withServices:)`), so OpenAir *may* be able to subscribe to `0x180D` without fighting Google Health. This is **unverified**; the test below checks it.
+- iOS keeps background Bluetooth alive while connected, and state restoration relaunches OpenAir if iOS kills it. **Force-quitting stops it** until you reopen the app.
+- For stillness detection (so we only trust HRV while you're still), use the iPhone's motion sensors via CoreMotion activity.
 
 ---
 
@@ -99,7 +104,7 @@ Instant alerts become possible, because there's no waiting on cloud sync. For ex
 ## 4. Spike: verify on your Air (≈1 hour, no code)
 
 1. In Google Health, turn on **Share heart rate** (and **Always visible**) for the Air.
-2. Install **nRF Connect** (Android or iOS). Scan, find the Air advertising `0x180D`, and connect. Accept the pairing prompt if it appears.
+2. Install **nRF Connect** from the App Store. Scan, find the Air advertising `0x180D`, and connect. Accept the pairing prompt if it appears.
 3. Subscribe to **`0x2A37`** and watch the raw bytes:
    - Is **flags bit 4** set? If yes, RR intervals are present.
    - Do the RR values **vary beat to beat** while you sit still and breathe slowly? If yes, they're real RR. If they always equal 60000/bpm, they're synthetic and useless for HRV.
@@ -113,7 +118,7 @@ Send me what you see (screenshots are fine). If RR is real, the hybrid plan is a
 ## 5. Impact on the plan
 
 - **Architecture becomes hybrid:** `BLE live source` (phone/hub, local) + `Google Health API` (history), merged into one store.
-- **Form factor:** Capacitor native app (Android first, since it's simpler for background BLE). A PWA remains for viewing on any device.
+- **Form factor:** native iOS app (Expo / React Native) distributed via TestFlight. No PWA is needed.
 - **New phase "0b · BLE spike"** runs alongside the API spike.
 - **The stress feature gets better:** real-time, from real beat-to-beat data, rather than inferred once a day.
 

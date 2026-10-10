@@ -95,6 +95,8 @@ Methods: `list` (intraday/granular), `rollUp`, `dailyRollUp`, `reconcile`, plus 
 
 ## 4. Getting it onto your phone: options compared
 
+> **Superseded (2026-10-09):** you're on iPhone, and we want direct Bluetooth (see [BLE_RESEARCH.md](BLE_RESEARCH.md)), so the choice is a **native iOS app built with Expo**, not a PWA. iOS Safari has no Web Bluetooth. The table below is kept for reference. Current plan: [PLAN.md](PLAN.md).
+
 | Option | Pros | Cons | Verdict |
 |---|---|---|---|
 | **A. PWA + small cloud backend** | One codebase; works on iPhone and Android; installs to the home screen; Web Push alerts; server syncs 24/7 via webhooks | iOS push only works once installed to the home screen (iOS 16.4+); no home-screen widgets | **✅ Recommended. Start here.** |
