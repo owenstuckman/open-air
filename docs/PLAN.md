@@ -1,5 +1,7 @@
 # OpenAir: Plan & Wireframes
 
+> **Shelved 2026-10-17. Not feasible for now.** A from-scratch, Bluetooth-only app can't get more than live heart rate (plus HRV if RR is real) from the Air. See [README → Why it's shelved](../README.md#why-its-shelved). The plan below is kept for reference.
+
 _Phone-first Fitbit Air dashboard. **v3, 2026-10-10.** Evidence: [RESEARCH.md](RESEARCH.md) (Google Health API) and [BLE_RESEARCH.md](BLE_RESEARCH.md) (direct Bluetooth)._
 
 ## Decisions so far
